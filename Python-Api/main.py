@@ -12,8 +12,7 @@ api.http.add_middleware(hug.middleware.CORSMiddleware(api, max_age=10))
 
 @hug.get("/") 
 def main():
-    return {"results": {"nombre": "Guille"}}
-
+    return "API para aplicación LyOp->  https://www.lyop-unsj.web.app"
 
 @hug.post("/lineal") 
 def lineal(body):
