@@ -1,8 +1,10 @@
+from collections import namedtuple
+
 from ortools.linear_solver import pywraplp
 
 
 import hug
-
+from ortools.sat.python import cp_model
 
 api = hug.API(__name__)
 api.http.add_middleware(hug.middleware.CORSMiddleware(api, max_age=10))
@@ -125,6 +127,7 @@ def integer(body):
         print('No existe una solución')
     return answer
 
+
 @hug.post("/sensibility")
 def sensibility(body):
     json_data = body
@@ -186,6 +189,85 @@ def sensibility(body):
     return answer
 
 
+@hug.post("/scheduling")
+def scheduling(body):
+    json_data = body
+    print("llego")
+    print(json_data)
+    cant_jobs = int(json_data['cantJobs'])
+    cant_tasks = int(json_data['cantTasks'])
+    tiempo_tasks = json_data['tiempoTasks']
+    precedencia = (json_data['precedencia'])
+    cant_recursos = int(json_data['cantRecursos'])
+    cant_unidades = json_data['cantUnidades']
+    demanda_tasks = json_data['demandaTasks']
+
+    # crear modelo
+    model = cp_model.CpModel()
+
+    # crear las variables de decision: intervalos para cada task
+    task_type = namedtuple('task_type', 'jobId taskId start end interval demand')
+    jobs = []
+    all_tasks = []
+    limite = sum(tiempo_tasks)*cant_jobs    # limite de tiempo para las variables
+    for j in range(cant_jobs):
+        tasks = []
+        for t in range(cant_tasks):
+            id = '_'+str(j)+'_'+str(t)
+
+            start = model.NewIntVar(0, limite, 'start'+id)
+            duration = tiempo_tasks[t]
+            end = model.NewIntVar(0, limite, 'end'+id)
+            interval = model.NewIntervalVar(start, duration, end, 'interval'+id)
+
+            demand = demanda_tasks[t]
+
+            task = task_type(j, t, start, end, interval, demand)
+            tasks.append(task)
+            all_tasks.append(task)
+        jobs.append(tasks)
+
+    print(jobs)
+
+    # Restricciones
+    # Precedencia
+    for p in precedencia:
+        end_task = p[0] - 1
+        before_start_task = p[1] - 1
+        for job in jobs:
+            model.Add(job[end_task].end <= job[before_start_task].start)
+
+    # Recursos: va a ser siempre con reposición, que el acumulado de la demanda de cada recurso no supere la capacidad
+    # en un momento dado
+    for r in range(cant_recursos):
+        model.AddCumulative([task.interval for task in all_tasks],  # los intervalos de los tasks
+                             [task.demand[r] for task in all_tasks],  # la demanda por cada task de ese recurso
+                             cant_unidades[r])   # la capacidad de cada recurso
+
+    # Objetivo: crear un timeSpan que termine lo antes posible la ultima tarea del ultimo job
+    obj_var = model.NewIntVar(0, limite, 'makespan')
+    model.AddMaxEquality(obj_var, [task.end for task in job for job in jobs])
+    model.Minimize(obj_var)
+
+    # Resolver el modelo
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+
+    if status == cp_model.OPTIMAL:
+        solution = []
+        for task in all_tasks:
+            solution.append({'job': task.jobId+1,
+                             'task': task.taskId+1,
+                             'start': solver.Value(task.start),
+                             'end': solver.Value(task.end)})
+        answer = {'error': False, 'solution': solution}
+
+    else:
+        answer = {'error': True, 'message': 'No existe una solución'}
+    return answer
+
+
+
 # Especificación de formatos json:
 # lineal y integer:
 #     problema:
@@ -232,3 +314,44 @@ def sensibility(body):
 #         fallo:
 #             answer = {'error': True,
 #                       'message': 'No existe una solución'}
+#
+# scheduling:
+#      problema:
+#         data = {
+#             'cantJobs': "3",
+#             'cantTasks': "4",
+#             'tiempoTasks':  # lo que se demora cada tarea
+#                    [3, 3, 2, 1],
+#             'precedencia':  # restricciones de precedencia, son del tipo endBeforeStart(tarea1, tarea2)
+#                   [[3, 4],
+#                    [2, 3],
+#                    [1, 2]],
+#             'cantRecursos': "2",
+#             'cantUnidades':  # cantidad de cada recurso
+#                   [1, 2],
+#             'demandaTasks':
+#                 [[1, 0],
+#                  [0, 1],
+#                  [0, 1],
+#                  [1, 0]]
+#         }
+#       answer:
+#         exito:
+#             answer = {'error': False,
+#                       'solution': [
+#                               {'job': jobId,
+#                                 'task': taskId,
+#                                 'start': start,
+#                                 'end': end
+#                                } ...
+#                           ]
+#                       }
+#             fallo:
+#                      answer = {'error': True,
+#                                 'message': 'No existe una solución'}
+# Explicacion del problema de shceduling:
+# Existen x trabajos iguales de y tareas cada uno. Las tareas siempre se demoran el mismo tiempo.
+# Exiten z cantidad de recursos de los que hay una cierta capacidad (ejemplo: empleados)
+# Siempre se minimiza el final de todos los trabajos
+# Las restricciones dependen del orden de precedencia que se les de y de la cantidad de recursos que
+# use cada tipo de tarea. Similar al ejemplo de la construccion de la casa, pero mas general.
