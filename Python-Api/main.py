@@ -176,11 +176,11 @@ def sensibility(body):
         # increase in the right-hand side of a constraint (lo vimos como
         # shadow price o precio sombra)
         answer = {'error': False,
-                  'solution': solution,
+                  'solution': [round(c, 5) for c in solution],
                   'opt': opt,
-                  'consumo': consumo,
-                  'costo_reducido': costo_reducido,
-                  'dual_value': dual_value
+                  'consumo': [round(c, 5) for c in consumo],
+                  'costo_reducido': [round(c, 5) for c in costo_reducido],
+                  'dual_value': [round(c, 5) for c in dual_value]
                   }
     else:
         answer = {'error': True, 'message': 'No existe una solución'}
@@ -196,7 +196,7 @@ def scheduling(body):
     cant_jobs = int(json_data['cantJobs'])
     cant_tasks = int(json_data['cantTasks'])
     tiempo_tasks = json_data['tiempoTasks']
-    precedencia = (json_data['precedencia'])
+    precedencia = (json_data['precedencias'])
     cant_recursos = int(json_data['cantRecursos'])
     cant_unidades = json_data['cantUnidades']
     demanda_tasks = json_data['demandaTasks']
@@ -259,7 +259,7 @@ def scheduling(body):
                              'task': task.taskId+1,
                              'start': solver.Value(task.start),
                              'end': solver.Value(task.end)})
-        answer = {'error': False, 'solution': solution}
+        answer = {'error': False, 'endTime': max([solver.Value(task.end) for task in all_tasks]), 'solution': solution}
 
     else:
         answer = {'error': True, 'message': 'No existe una solución'}
@@ -321,7 +321,7 @@ def scheduling(body):
 #             'cantTasks': "4",
 #             'tiempoTasks':  # lo que se demora cada tarea
 #                    [3, 3, 2, 1],
-#             'precedencia':  # restricciones de precedencia, son del tipo endBeforeStart(tarea1, tarea2)
+#             'precedencias:  # restricciones de precedencia, son del tipo endBeforeStart(tarea1, tarea2)
 #                   [[3, 4],
 #                    [2, 3],
 #                    [1, 2]],
@@ -337,6 +337,7 @@ def scheduling(body):
 #       answer:
 #         exito:
 #             answer = {'error': False,
+#                        'endTime': 23,
 #                       'solution': [
 #                               {'job': jobId,
 #                                 'task': taskId,
